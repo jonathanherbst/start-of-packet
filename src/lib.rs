@@ -43,27 +43,13 @@ impl<B: AsRef<[u8]>> Packet<B> {
         }
     }
 
-    /// Find a packet in a buffer
-    pub fn try_find<'a>(buffer: &'a [u8]) -> (usize, Result<Packet<&'a [u8]>>) {
-        for (i, b) in buffer.iter().enumerate() {
-            if *b == SOP[0] {
-                match Packet::try_parse(&buffer[i..]) {
-                    Ok(packet) => return (i, Ok(packet)),
-                    Err(Error::NotEnoughData) => return (i, Err(Error::NotEnoughData)),
-                    _ => (),
-                }
-            }
-        }
-        (buffer.as_ref().len(), Err(Error::SopNotFound))
-    }
-
     /// Total length of the sop header and payload
     pub fn get_packet_len(&self) -> usize {
         self.payload_len + 8
     }
 
-    /// Single byte payload id stored in the header
-    pub fn get_payload_id(&self) -> u8 {
+    /// Single byte packet id stored in the header
+    pub fn get_packet_id(&self) -> u8 {
         self.inner.as_ref()[3]
     }
 
@@ -85,8 +71,8 @@ impl<B: AsMut<[u8]>> Packet<B> {
         }
     }
 
-    /// Set the payload id in the packet
-    pub fn set_payload_id(&mut self, id: u8) {
+    /// Set the packet id stored in the header
+    pub fn set_packet_id(&mut self, id: u8) {
         self.inner.as_mut()[3] = id;
     }
 
@@ -102,6 +88,20 @@ impl<B: AsMut<[u8]>> Packet<B> {
 
         payload_len + 8
     }
+}
+
+/// Find a packet in a buffer
+pub fn try_find<'a>(buffer: &'a [u8]) -> (usize, Result<Packet<&'a [u8]>>) {
+    for (i, b) in buffer.iter().enumerate() {
+        if *b == SOP[0] {
+            match Packet::try_parse(&buffer[i..]) {
+                Ok(packet) => return (i, Ok(packet)),
+                Err(Error::NotEnoughData) => return (i, Err(Error::NotEnoughData)),
+                _ => (),
+            }
+        }
+    }
+    (buffer.as_ref().len(), Err(Error::SopNotFound))
 }
 
 fn crc(data: &[u8], init: u8) -> u8 {
@@ -148,7 +148,7 @@ mod tests {
     fn packet_parses() {
         let data = [0x37u8, 0x10, 0x00, 0x56, 0x0A, 0x00, 0x00, 0x48, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09];
         let packet = Packet::try_parse(&data).expect("packet should be valid");
-        assert_eq!(packet.get_payload_id(), 0x56);
+        assert_eq!(packet.get_packet_id(), 0x56);
         assert_eq!(packet.get_payload(), &[0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09]);
         assert_eq!(packet.get_packet_len(), 18);
     }
@@ -156,7 +156,7 @@ mod tests {
     #[test]
     fn find_packet_with_junk_at_the_beginning() {
         let data = [0x12, 0x34, 0x56, 0x37u8, 0x10, 0x00, 0x56, 0x0A, 0x00, 0x00, 0x48, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09];
-        let (junk, maybe_packet) = Packet::<&[u8]>::try_find(&data);
+        let (junk, maybe_packet) = try_find(&data);
         assert_eq!(junk, 3);
         let packet = maybe_packet.expect("should have found a packet");
         assert_eq!(packet.get_payload(), &[0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09]);
